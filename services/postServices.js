@@ -234,10 +234,6 @@ exports.likePost = (postId, userId) => {
                     user: userId,
                 });
 
-                const _ = await notiServices.createLikePostNotification(
-                    userId,
-                    postId
-                );
                 console.log(_);
                 resolve({
                     status: "success",
