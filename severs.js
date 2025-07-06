@@ -10,12 +10,8 @@ process.on("uncaughtException", (err) => {
 dotenv.config({ path: "./config.env" });
 const app = require("./app");
 
-const DB = process.env.DATABASE.replace(
-    "<password>",
-    process.env.DATABASE_PASSWORD
-);
-
-console.log("▶︎ Final Mongo URI:", DB);   // <-- thêm dòng này
+const DB = process.env.DATABASE;
+console.log("▶︎ Final Mongo URI:", DB); // <-- thêm dòng này
 mongoose
     .connect(DB, {
         useNewUrlParser: true,

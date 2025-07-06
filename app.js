@@ -14,14 +14,14 @@ const cookieSession = require("cookie-session");
 const AppError = require("./utils/appError");
 const globalErrorHandler = require("./controllers/errorController");
 const userRouter = require("./routes/userRoutes");
+const postRouter = require("./routes/postRoutes");
+const searchRouter = require("./routes/searchRoutes");
 
 const cors = require("cors");
 
 const app = express();
 const upload = multer();
 
-// app.enable("trust proxy");
-// app.set("trust proxy", ["loopback", "linklocal", "uniquelocal"]);
 
 app.use(
     cors({
@@ -34,29 +34,20 @@ app.use(
         credentials: true, // Allow credentials (cookies) to be sent
     })
 );
-// app.use(
-//     cookieSession({
-//         secret: process.env.JWT_SECRET,
-//         secure: process.env.NODE_ENV === "development" ? false : true,
-//         httpOnly: process.env.NODE_ENV === "development" ? false : true,
-//         sameSite: process.env.NODE_ENV === "development" ? false : "none",
-//     })
-// );
-// app.set("view engine", "pug");
-// app.set("views", path.join(__dirname, "views"));
 
-// view engine setup
+app.set("view engine", "pug");
+app.set("views", path.join(__dirname, "views"));
+
+
 app.set("views", path.join(__dirname, "views"));
 app.set("view engine", "jade");
 
-// 1) GLOBAL MIDDLEWARES
-// Serving static files
+
 app.use(express.static(path.join(__dirname, "public")));
 
-// Set security HTTP headers
 app.use(helmet());
 
-// Development logging
+
 if (process.env.NODE_ENV === "development") {
     app.use(morgan("dev"));
 }
@@ -106,6 +97,10 @@ app.use((req, res, next) => {
 
 // 3) ROUTES
 app.use("/api/v1/users", userRouter);
+
+app.use("/api/v1/posts", postRouter);
+
+app.use("/api/v1/search", searchRouter);
 
 app.all("*", (req, res, next) => {
     next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
