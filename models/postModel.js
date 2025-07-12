@@ -15,13 +15,16 @@ const PostSchema = new mongoose.Schema(
                 message: "A post can have only up to 4 images",
             },
         },
-
         user: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "User", // Reference to the User model
+            ref: "User",
             required: [true, "A post must belong to a user"],
         },
-
+        parent: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Post", // Reference to parent post for sharing
+            default: null,
+        },
         numLikes: {
             type: Number,
             default: 0,
@@ -67,7 +70,19 @@ PostSchema.pre(/^find/, function (next) {
             model: "Profile",
             select: "avatar firstname lastname -user slug",
         },
-    })
+    }).populate({
+        path: "parent",
+        select: "content images user createdAt", // Thêm các field cần thiết
+        populate: {
+            path: "user",
+            select: "_id email profile role",
+            populate: {
+                path: "profile",
+                model: "Profile",
+                select: "avatar firstname lastname -user slug",
+            },
+        },
+    });
     next();
 });
 
