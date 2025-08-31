@@ -41,7 +41,7 @@ app.use(
         // origin: ["http://localhost:3000", "https://beegin-app.vercel.app"], // Replace with the origin of your client application
         origin: [
             "http://localhost:3000",
-            "https://beegin-app.vercel.app",
+            "https://bee-social-nu.vercel.app/login",
             "https://beegin.vercel.app",
         ],
         credentials: true, // Allow credentials (cookies) to be sent
@@ -49,10 +49,11 @@ app.use(
 );
 app.use(
     cookieSession({
-        secret: process.env.JWT_SECRET,
-        secure: process.env.NODE_ENV === "development" ? false : true,
-        httpOnly: process.env.NODE_ENV === "development" ? false : true,
-        sameSite: process.env.NODE_ENV === "development" ? false : "none",
+        name: "session",
+        keys: [process.env.JWT_SECRET], // ✅ dùng keys thay vì secret
+        secure: process.env.NODE_ENV !== "development",
+        httpOnly: true,
+        sameSite: process.env.NODE_ENV === "development" ? "lax" : "none",
     })
 );
 
