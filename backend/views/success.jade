@@ -1,0 +1,12 @@
+//
+   Created by vinhnt on 6/16/2017.
+
+extends layout
+
+block content
+    if code == "00"
+        h2(style="text-align: center")  Payment successfully
+    else
+        h2(style="text-align: center; color: red") Payment unsuccessfully
+    p(style="text-align: center")
+        a.btn.btn-success(href=redirect_Url) Back to business page
