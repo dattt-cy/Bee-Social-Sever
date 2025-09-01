@@ -44,6 +44,7 @@ const io = socket(server, {
             "http://localhost:3000",
             "https://beegin-app.vercel.app",
             "https://beegin.vercel.app",
+            "https://bee-social-sever-production-c2e9.up.railway.app", // Thêm dòng này
         ],
         credentials: true,
     },
