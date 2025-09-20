@@ -12,7 +12,7 @@ const notiServices = require("./notificationServices");
 const followServices = require("./followServices");
 const { post } = require("jquery");
 
-const checkDeletingPermission = async (postId, reject, userId) => {
+const checkDeletingPermission = async (postId, userId) => {
     // admins always have permission to delete post
     const user = await User.findById(userId);
     if (user.role === "admin") {
@@ -20,38 +20,36 @@ const checkDeletingPermission = async (postId, reject, userId) => {
     }
     const post = await Post.findById(postId);
     if (!post) {
-        reject(new AppError(`Post not found`, 404));
-    } else if (post.user._id.toString() !== userId) {
-        reject(
-            new AppError(
-                `You do not have permission to perform this action`,
-                403
-            )
-        );
-    } else if (!post.isActived) {
-        reject(new AppError(`This post no longer exists`, 404));
-    } else {
-        return true;
+        throw new AppError(`Post not found`, 404);
     }
+    if (post.user._id.toString() !== userId) {
+        throw new AppError(
+            `You do not have permission to perform this action`,
+            403
+        );
+    }
+    if (!post.isActived) {
+        throw new AppError(`This post no longer exists`, 404);
+    }
+    return true;
 };
 
-const checkPost = async (postId, reject, userId = null) => {
+const checkPost = async (postId, userId = null) => {
     const post = await Post.findById(postId);
     if (!post) {
-        reject(new AppError(`Post not found`, 404));
-    } else if (userId && post.user._id.toString() !== userId) {
-        // only user of the post has permission to update post
-        reject(
-            new AppError(
-                `You do not have permission to perform this action`,
-                403
-            )
-        );
-    } else if (!post.isActived) {
-        reject(new AppError(`This post no longer exists`, 404));
-    } else {
-        return true;
+        throw new AppError(`Post not found`, 404);
     }
+    if (userId && post.user._id.toString() !== userId) {
+        // only user of the post has permission to update post
+        throw new AppError(
+            `You do not have permission to perform this action`,
+            403
+        );
+    }
+    if (!post.isActived) {
+        throw new AppError(`This post no longer exists`, 404);
+    }
+    return post;
 };
 
 exports.createPost = (data) => {
@@ -60,12 +58,17 @@ exports.createPost = (data) => {
             // set the root parent for sharing post
             let { content, images, imageVideo, categories, user, parent } =
                 data;
+
             if (parent) {
                 const parentPost = await Post.findById(parent);
+                if (!parentPost) {
+                    return reject(new AppError(`Parent post not found`, 404));
+                }
                 if (parentPost.parent) {
                     parent = parentPost.parent;
                 }
             }
+
             const post = await Post.create({
                 content: content,
                 images: images,
@@ -73,26 +76,36 @@ exports.createPost = (data) => {
                 categories: categories,
                 user: user,
                 parent: parent,
-                isActived: true, // Thêm dòng này!
+                isActived: true,
             });
 
-            if (post) {
-                const result = await Post.findById(post._id);
+            if (!post) {
+                return reject(new AppError(`Failed to create post`, 500));
+            }
+
+            const result = await Post.findById(post._id);
+
+            // Handle notifications (non-blocking)
+            try {
                 if (parent) {
-                    const _ = await notiServices.createSharePostNotification(
+                    await notiServices.createSharePostNotification(
                         post._id.toString()
                     );
-                    console.log(_);
                 }
-                const _ = await feedServices.addNewPostToFollowingUserFeed(
-                    post.id,
-                    user
+
+                await feedServices.addNewPostToFollowingUserFeed(post.id, user);
+            } catch (notiError) {
+                console.log(
+                    "Notification error (non-critical):",
+                    notiError.message
                 );
-                resolve({
-                    status: "success",
-                    data: result,
-                });
+                // Don't fail post creation if notification fails
             }
+
+            resolve({
+                status: "success",
+                data: result,
+            });
         } catch (err) {
             reject(err);
         }
@@ -102,22 +115,18 @@ exports.createPost = (data) => {
 exports.updatePost = (postId, userId, data) => {
     return new Promise(async (resolve, reject) => {
         try {
-            let post;
-            if (await checkPost(postId, reject, userId)) {
-                post = await Post.findByIdAndUpdate(postId, data, {
-                    new: true,
-                    runValidators: true,
-                });
+            // Check if post exists and user has permission
+            await checkPost(postId, userId);
 
-                if (!post) {
-                    reject(new AppError(`Post not found`, 404));
-                }
+            const post = await Post.findByIdAndUpdate(postId, data, {
+                new: true,
+                runValidators: true,
+            });
 
-                resolve({
-                    status: "success",
-                    data: post,
-                });
+            if (!post) {
+                return reject(new AppError(`Post not found`, 404));
             }
+
             resolve({
                 status: "success",
                 data: post,
@@ -130,23 +139,20 @@ exports.updatePost = (postId, userId, data) => {
 exports.deletePost = (postId, userId) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if (
-                (await checkDeletingPermission(postId, reject, userId)) === true
-            ) {
-                const doc = await Post.findByIdAndUpdate(postId, {
-                    isActived: false,
-                });
+            // Check deletion permission
+            await checkDeletingPermission(postId, userId);
 
-                if (!doc) {
-                    reject(
-                        new AppError(`You did not like this post before`, 400)
-                    );
-                }
+            const doc = await Post.findByIdAndUpdate(postId, {
+                isActived: false,
+            });
 
-                resolve({
-                    status: "success",
-                });
+            if (!doc) {
+                return reject(new AppError(`Post not found`, 404));
             }
+
+            resolve({
+                status: "success",
+            });
         } catch (err) {
             reject(err);
         }
@@ -158,15 +164,16 @@ exports.getPostById = (id) => {
         try {
             const post = await Post.findById(id);
             if (!post) {
-                reject(new AppError(`Post not found`, 404));
-            } else if (!post.isActived) {
-                reject(new AppError(`This post is longer existed`, 404));
-            } else {
-                resolve({
-                    status: "success",
-                    data: post,
-                });
+                return reject(new AppError(`Post not found`, 404));
             }
+            if (!post.isActived) {
+                return reject(new AppError(`This post is longer existed`, 404));
+            }
+
+            resolve({
+                status: "success",
+                data: post,
+            });
         } catch (err) {
             reject(err);
         }
@@ -256,22 +263,28 @@ exports.isPostLikedByUser = (postId, userId) => {
 exports.likePost = (postId, userId) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if ((await checkPost(postId, reject)) === true) {
-                const likePost = await LikePost.create({
-                    post: postId,
-                    user: userId,
-                });
+            // Check if post exists and is active
+            await checkPost(postId);
 
-                const _ = await notiServices.createLikePostNotification(
-                    userId,
-                    postId
+            const likePost = await LikePost.create({
+                post: postId,
+                user: userId,
+            });
+
+            try {
+                await notiServices.createLikePostNotification(userId, postId);
+            } catch (notiError) {
+                console.log(
+                    "Notification error (non-critical):",
+                    notiError.message
                 );
-                console.log(_);
-                resolve({
-                    status: "success",
-                    data: likePost,
-                });
+                // Don't fail the like operation if notification fails
             }
+
+            resolve({
+                status: "success",
+                data: likePost,
+            });
         } catch (err) {
             console.log(err);
             reject(err);
@@ -282,22 +295,23 @@ exports.likePost = (postId, userId) => {
 exports.unlikePost = (postId, userId) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if ((await checkPost(postId, reject)) === true) {
-                const doc = await LikePost.findOneAndDelete({
-                    user: userId,
-                    post: postId,
-                });
+            // Check if post exists and is active
+            await checkPost(postId);
 
-                if (!doc) {
-                    reject(
-                        new AppError(`You did not like this post before`, 400)
-                    );
-                }
+            const doc = await LikePost.findOneAndDelete({
+                user: userId,
+                post: postId,
+            });
 
-                resolve({
-                    status: "success",
-                });
+            if (!doc) {
+                return reject(
+                    new AppError(`You did not like this post before`, 400)
+                );
             }
+
+            resolve({
+                status: "success",
+            });
         } catch (err) {
             reject(err);
         }
@@ -308,23 +322,24 @@ exports.getPostsByHashtag = (hashtag, query, media = null) => {
     return new Promise(async (resolve, reject) => {
         try {
             if (!hashtag) {
-                reject(`Hashtag empty`, 400);
+                return reject(new AppError(`Hashtag empty`, 400));
             }
             const hashtagId = await Hashtag.find({
                 name: { $regex: new RegExp(hashtag, "i") },
             });
             console.log(hashtagId);
-            if (hashtagId.length == 0)
-                resolve({
+            if (hashtagId.length == 0) {
+                return resolve({
                     status: "success",
                     results: 0,
                     data: null,
                 });
+            }
             const hashtagPosts = await HashtagPost.find({
                 hashtag: hashtagId[0]._id,
             });
             if (!hashtagPosts) {
-                reject(new AppError(`Not found`, 404));
+                return reject(new AppError(`Not found`, 404));
             }
             const postIds = hashtagPosts.map((post) => post.post.toString());
 
@@ -365,7 +380,9 @@ exports.getPostsByHashtag = (hashtag, query, media = null) => {
 exports.searchPosts = (searchText, query, media = null) => {
     return new Promise(async (resolve, reject) => {
         try {
-            if (!searchText) reject(new AppError(`Empty search string`, 400));
+            if (!searchText) {
+                return reject(new AppError(`Empty search string`, 400));
+            }
             // const regex = new RegExp(`(?<!#)\\b${searchText}\\b`, "iu");
             const regex = new RegExp(
                 `(?<![#\\p{L}])${searchText}(?![#\\p{L}])`,
@@ -382,8 +399,6 @@ exports.searchPosts = (searchText, query, media = null) => {
                 .paginate();
 
             const posts = (await features.query) ?? [];
-
-            if (!posts) reject(new AppError(`Not found`, 404));
 
             resolve({
                 status: "success",
