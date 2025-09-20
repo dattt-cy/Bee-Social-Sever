@@ -26,7 +26,7 @@ exports.checkParentComment = (commentId) => {
                     data: true,
                 });
             }
-            const comment = Comment.findById(commentId);
+            const comment = await Comment.findById(commentId);
             if (!comment) {
                 reject(new AppError(`Comment not found`, 404));
             }
@@ -235,7 +235,7 @@ exports.unlikeComment = (commentId, userId) => {
                 );
             }
             resolve({
-                status: "sucess",
+                status: "success",
             });
         } catch (err) {
             reject(err);

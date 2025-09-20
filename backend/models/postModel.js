@@ -80,7 +80,7 @@ PostSchema.statics.setNumShares = async function (postId) {
     if (postId) {
         numShares = await this.countDocuments({ parent: postId });
     }
-    console.log(numShares);
+    
     await this.findByIdAndUpdate(postId, { numShares: numShares });
 };
 
