@@ -6,32 +6,32 @@ const APIFeatures = require("./../utils/apiFeatures");
 
 const notiServices = require("./notificationServices");
 
-const checkPost = async (postId, reject) => {
+const checkPost = async (postId) => {
     const post = await Post.findById(postId);
     if (!post) {
-        reject(new AppError(`Post not found`, 404));
-    } else if (!post.isActived) {
-        reject(new AppError(`This post no longer existed`, 404));
-    } else {
-        return true;
+        throw new AppError(`Post not found`, 404);
     }
+    if (!post.isActived) {
+        throw new AppError(`This post no longer existed`, 404);
+    }
+    return post;
 };
 
 exports.checkParentComment = (commentId) => {
     return new Promise(async (resolve, reject) => {
         try {
             if (!commentId) {
-                resolve({
+                return resolve({
                     status: "success",
                     data: true,
                 });
             }
             const comment = await Comment.findById(commentId);
             if (!comment) {
-                reject(new AppError(`Comment not found`, 404));
+                return reject(new AppError(`Comment not found`, 404));
             }
 
-            resolve({
+            return resolve({
                 status: "success",
                 data: true,
             });
@@ -45,36 +45,67 @@ exports.createComment = (data) => {
     return new Promise(async (resolve, reject) => {
         try {
             const { content, user, post, parent } = data;
-            if (!content || !user || !post) {
-                reject(new AppError("Please fill in all required fields", 400));
-            }
-            if (await checkPost(post, reject)) {
-                const comment = await Comment.create({
-                    content: content,
-                    user: user,
-                    post: post,
-                    parent: parent,
-                });
+            console.log("Creating comment with data:", {
+                content,
+                user,
+                post,
+                parent,
+            });
 
-                let _;
+            if (!content || !user || !post) {
+                return reject(
+                    new AppError("Please fill in all required fields", 400)
+                );
+            }
+
+            // Check if post exists and is active
+            console.log("Checking post exists...");
+            await checkPost(post);
+            console.log("Post check passed");
+
+            console.log("Creating comment...");
+            const comment = await Comment.create({
+                content: content,
+                user: user,
+                post: post,
+                parent: parent,
+            });
+            console.log("Comment created:", comment._id);
+
+            // Create notifications
+            try {
                 if (parent) {
-                    _ = await notiServices.createReplyCommentNotification(
+                    console.log("Creating reply notification...");
+                    await notiServices.createReplyCommentNotification(
                         comment._id.toString()
                     );
                 } else {
-                    _ = await notiServices.createCommentPostNotification(
+                    console.log("Creating comment post notification...");
+                    await notiServices.createCommentPostNotification(
                         comment._id.toString(),
                         post
                     );
                 }
-                // populate user
-                await comment.populate("user", "_id profile");
-                resolve({
-                    status: "success",
-                    data: comment,
-                });
+                console.log("Notification created successfully");
+            } catch (notiError) {
+                console.log(
+                    "Notification error (non-critical):",
+                    notiError.message
+                );
+                // Don't fail the comment creation if notification fails
             }
+
+            // populate user
+            console.log("Populating user data...");
+            await comment.populate("user", "_id profile");
+            console.log("User populated successfully");
+
+            resolve({
+                status: "success",
+                data: comment,
+            });
         } catch (err) {
+            console.error("Error in createComment:", err);
             reject(err);
         }
     });
@@ -84,37 +115,41 @@ exports.getCommentsOfPost = (data, query) => {
     return new Promise(async (resolve, reject) => {
         try {
             const { post, parent, user } = data;
-            if (await checkPost(post, reject)) {
-                const features = new APIFeatures(
-                    Comment.find({ post: data.post, parent: parent }).lean(),
-                    query
-                )
-                    .filter()
-                    .sort()
-                    .limitFields()
-                    .paginate();
-                let comments = await features.query;
-                const total = await Comment.countDocuments({
-                    post: data.post,
-                    parent: parent,
-                });
 
-                const commentLikeEntries = comments.map(async (comment) => {
-                    const isLiked = await this.isCommentLikedByUser(
-                        comment._id.toString(),
-                        user
-                    );
-                    comment.isLiked = isLiked.data;
-                    return comment;
-                });
-                const _ = await Promise.all(commentLikeEntries);
-                resolve({
-                    status: "success",
-                    results: comments.length,
-                    total,
-                    data: comments,
-                });
-            }
+            // Check if post exists and is active
+            await checkPost(post);
+
+            const features = new APIFeatures(
+                Comment.find({ post: data.post, parent: parent })
+                    .populate("user", "_id profile")
+                    .lean(),
+                query
+            )
+                .filter()
+                .sort()
+                .limitFields()
+                .paginate();
+            let comments = await features.query;
+            const total = await Comment.countDocuments({
+                post: data.post,
+                parent: parent,
+            });
+
+            const commentLikeEntries = comments.map(async (comment) => {
+                const isLiked = await this.isCommentLikedByUser(
+                    comment._id.toString(),
+                    user
+                );
+                comment.isLiked = isLiked.data;
+                return comment;
+            });
+            const _ = await Promise.all(commentLikeEntries);
+            resolve({
+                status: "success",
+                results: comments.length,
+                total,
+                data: comments,
+            });
         } catch (err) {
             reject(err);
         }

@@ -16,7 +16,9 @@ exports.setPagingComment = (req, res, next) => {
 };
 
 exports.checkParentComment = catchAsync(async (req, res, next) => {
-    const data = await commentServices.checkParentComment(req.body.parent);
+    if (req.body.parent) {
+        const data = await commentServices.checkParentComment(req.body.parent);
+    }
     next();
 });
 
